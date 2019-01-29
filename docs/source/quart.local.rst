@@ -1,5 +1,5 @@
-quart\.local module
-===================
+quart.local module
+==================
 
 .. automodule:: quart.local
     :members:

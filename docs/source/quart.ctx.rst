@@ -1,5 +1,5 @@
-quart\.ctx module
-=================
+quart.ctx module
+================
 
 .. automodule:: quart.ctx
     :members:
