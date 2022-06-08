@@ -1,10 +1,11 @@
-Blog
-====
+Tutorial: Building a simple blog
+================================
 
-The is a minimal blog application using sqlite. To run (install quart)
-and then,
+This is the example code for the blog tutorial. It is managed using
+`Poetry <https://python-poetry.org>`_ with the following commands,
 
 .. code-block:: console
 
-    $ export QUART_APP=blog:app
-    $ quart run
+    poetry install
+    poetry run start
+    poetry run pytest -c pyproject.toml tests/
