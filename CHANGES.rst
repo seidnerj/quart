@@ -1,3 +1,7 @@
+0.19.4b 2024-02-18
+-----------------
+* Support listening to http and https simultaneously
+
 0.19.4 2023-11-19
 -----------------
 
