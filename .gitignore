@@ -4,6 +4,7 @@ __pycache__/
 Quart.egg-info/
 .cache/
 .tox/
+.idea/
 TODO
 .mypy_cache/
 .pytest_cache/
