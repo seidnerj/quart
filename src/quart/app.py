@@ -6,125 +6,138 @@ import signal
 import sys
 import warnings
 from collections import defaultdict
+from collections.abc import AsyncGenerator
+from collections.abc import Awaitable
+from collections.abc import Coroutine
 from datetime import timedelta
-from inspect import isasyncgen, isgenerator
+from inspect import isasyncgen
+from inspect import iscoroutinefunction as _inspect_iscoroutinefunction
+from inspect import isgenerator
 from types import TracebackType
-from typing import (
-    Any,
-    AnyStr,
-    AsyncGenerator,
-    Awaitable,
-    Callable,
-    cast,
-    Coroutine,
-    NoReturn,
-    Optional,
-    overload,
-    TypeVar,
-    Union,
-)
+from typing import Any
+from typing import AnyStr
+from typing import Callable
+from typing import cast
+from typing import NoReturn
+from typing import Optional
+from typing import overload
+from typing import TypeVar
 from urllib.parse import quote
-from weakref import WeakSet
 
 from aiofiles import open as async_open
 from aiofiles.base import AiofilesContextManager
-from aiofiles.threadpool.binary import AsyncBufferedReader
 from flask.sansio.app import App
 from flask.sansio.scaffold import setupmethod
 from hypercorn.asyncio import serve
 from hypercorn.config import Config as HyperConfig
-from hypercorn.typing import ASGIReceiveCallable, ASGISendCallable, Scope
-from werkzeug.datastructures import Authorization, Headers, ImmutableDict
-from werkzeug.exceptions import Aborter, BadRequestKeyError, HTTPException, InternalServerError
-from werkzeug.routing import BuildError, MapAdapter, RoutingException
+from hypercorn.typing import ASGIReceiveCallable
+from hypercorn.typing import ASGISendCallable
+from hypercorn.typing import Scope
+from werkzeug.datastructures import Authorization
+from werkzeug.datastructures import Headers
+from werkzeug.datastructures import ImmutableDict
+from werkzeug.exceptions import Aborter
+from werkzeug.exceptions import BadRequestKeyError
+from werkzeug.exceptions import HTTPException
+from werkzeug.exceptions import InternalServerError
+from werkzeug.routing import BuildError
+from werkzeug.routing import MapAdapter
+from werkzeug.routing import RoutingException
 from werkzeug.wrappers import Response as WerkzeugResponse
 
-from .asgi import ASGIHTTPConnection, ASGILifespan, ASGIWebsocketConnection
+from .asgi import ASGIHTTPConnection
+from .asgi import ASGILifespan
+from .asgi import ASGIWebsocketConnection
 from .cli import AppGroup
-from .ctx import (
-    _AppCtxGlobals,
-    AppContext,
-    has_request_context,
-    has_websocket_context,
-    RequestContext,
-    WebsocketContext,
-)
-from .globals import (
-    _cv_app,
-    _cv_request,
-    _cv_websocket,
-    g,
-    request,
-    request_ctx,
-    session,
-    websocket,
-    websocket_ctx,
-)
-from .helpers import get_debug_flag, get_flashed_messages, send_from_directory
-from .routing import QuartMap, QuartRule
+from .config import Config
+from .ctx import _AppCtxGlobals
+from .ctx import AppContext
+from .ctx import has_request_context
+from .ctx import has_websocket_context
+from .ctx import RequestContext
+from .ctx import WebsocketContext
+from .globals import _cv_app
+from .globals import _cv_request
+from .globals import _cv_websocket
+from .globals import g
+from .globals import request
+from .globals import request_ctx
+from .globals import session
+from .globals import websocket
+from .globals import websocket_ctx
+from .helpers import get_debug_flag
+from .helpers import get_flashed_messages
+from .helpers import send_from_directory
+from .routing import QuartMap
+from .routing import QuartRule
 from .sessions import SecureCookieSessionInterface
-from .signals import (
-    appcontext_tearing_down,
-    got_background_exception,
-    got_request_exception,
-    got_serving_exception,
-    got_websocket_exception,
-    request_finished,
-    request_started,
-    request_tearing_down,
-    websocket_finished,
-    websocket_started,
-    websocket_tearing_down,
-)
-from .templating import _default_template_ctx_processor, Environment
-from .testing import (
-    make_test_body_with_headers,
-    make_test_headers_path_and_query_string,
-    make_test_scope,
-    no_op_push,
-    QuartClient,
-    QuartCliRunner,
-    sentinel,
-    TestApp,
-)
-from .typing import (
-    AfterServingCallable,
-    AfterWebsocketCallable,
-    ASGIHTTPProtocol,
-    ASGILifespanProtocol,
-    ASGIWebsocketProtocol,
-    BeforeServingCallable,
-    BeforeWebsocketCallable,
-    Event,
-    FilePath,
-    HeadersValue,
-    ResponseReturnValue,
-    ResponseTypes,
-    ShellContextProcessorCallable,
-    StatusCode,
-    TeardownCallable,
-    TemplateFilterCallable,
-    TemplateGlobalCallable,
-    TemplateTestCallable,
-    TestAppProtocol,
-    TestClientProtocol,
-    WebsocketCallable,
-    WhileServingCallable,
-)
-from .utils import (
-    cancel_tasks,
-    file_path_to_path,
-    MustReloadError,
-    observe_changes,
-    restart,
-    run_sync,
-)
-from .wrappers import BaseRequestWebsocket, Request, Response, Websocket
+from .signals import appcontext_tearing_down
+from .signals import got_background_exception
+from .signals import got_request_exception
+from .signals import got_serving_exception
+from .signals import got_websocket_exception
+from .signals import request_finished
+from .signals import request_started
+from .signals import request_tearing_down
+from .signals import websocket_finished
+from .signals import websocket_started
+from .signals import websocket_tearing_down
+from .templating import _default_template_ctx_processor
+from .templating import Environment
+from .testing import make_test_body_with_headers
+from .testing import make_test_headers_path_and_query_string
+from .testing import make_test_scope
+from .testing import no_op_push
+from .testing import QuartClient
+from .testing import QuartCliRunner
+from .testing import sentinel
+from .testing import TestApp
+from .typing import AfterServingCallable
+from .typing import AfterWebsocketCallable
+from .typing import ASGIHTTPProtocol
+from .typing import ASGILifespanProtocol
+from .typing import ASGIWebsocketProtocol
+from .typing import BeforeServingCallable
+from .typing import BeforeWebsocketCallable
+from .typing import Event
+from .typing import FilePath
+from .typing import HeadersValue
+from .typing import ResponseReturnValue
+from .typing import ResponseTypes
+from .typing import ShellContextProcessorCallable
+from .typing import StatusCode
+from .typing import TeardownCallable
+from .typing import TemplateFilterCallable
+from .typing import TemplateGlobalCallable
+from .typing import TemplateTestCallable
+from .typing import TestAppProtocol
+from .typing import TestClientProtocol
+from .typing import WebsocketCallable
+from .typing import WhileServingCallable
+from .utils import cancel_tasks
+from .utils import file_path_to_path
+from .utils import MustReloadError
+from .utils import observe_changes
+from .utils import restart
+from .utils import run_sync
+from .wrappers import BaseRequestWebsocket
+from .wrappers import Request
+from .wrappers import Response
+from .wrappers import Websocket
 
-try:
+if sys.version_info >= (3, 10):
     from typing import ParamSpec
-except ImportError:
-    from typing_extensions import ParamSpec  # type: ignore
+else:
+    from typing_extensions import ParamSpec
+
+# Python 3.14 deprecated asyncio.iscoroutinefunction, but suggested
+# inspect.iscoroutinefunction does not work correctly in some Python
+# versions before 3.12.
+# See https://github.com/python/cpython/issues/122858#issuecomment-2466239748
+if sys.version_info >= (3, 12):
+    iscoroutinefunction = _inspect_iscoroutinefunction
+else:
+    iscoroutinefunction = asyncio.iscoroutinefunction
 
 AppOrBlueprintKey = Optional[str]  # The App key is None, whereas blueprints are named
 T_after_serving = TypeVar("T_after_serving", bound=AfterServingCallable)
@@ -141,7 +154,7 @@ T_template_test = TypeVar("T_template_test", bound=TemplateTestCallable)
 T_websocket = TypeVar("T_websocket", bound=WebsocketCallable)
 T_while_serving = TypeVar("T_while_serving", bound=WhileServingCallable)
 
-T = TypeVar("T")
+T = TypeVar("T", bound=Any)
 P = ParamSpec("P")
 
 
@@ -211,6 +224,7 @@ class Quart(App):
     asgi_http_class = ASGIHTTPConnection
     asgi_lifespan_class = ASGILifespan
     asgi_websocket_class = ASGIWebsocketConnection
+    config_class = Config
     event_class = asyncio.Event
     jinja_environment = Environment  # type: ignore[assignment]
     lock_class = asyncio.Lock
@@ -234,18 +248,23 @@ class Quart(App):
             "EXPLAIN_TEMPLATE_LOADING": False,
             "MAX_CONTENT_LENGTH": 16 * 1024 * 1024,  # 16 MB Limit
             "MAX_COOKIE_SIZE": 4093,
+            "MAX_FORM_MEMORY_SIZE": 500_000,
+            "MAX_FORM_PARTS": 1_000,
             "PERMANENT_SESSION_LIFETIME": timedelta(days=31),
             # Replaces PREFERRED_URL_SCHEME to allow for WebSocket scheme
             "PREFER_SECURE_URLS": False,
             "PRESERVE_CONTEXT_ON_EXCEPTION": None,
             "PROPAGATE_EXCEPTIONS": None,
+            "PROVIDE_AUTOMATIC_OPTIONS": True,
             "RESPONSE_TIMEOUT": 60,  # Second
             "SECRET_KEY": None,
+            "SECRET_KEY_FALLBACKS": None,
             "SEND_FILE_MAX_AGE_DEFAULT": timedelta(hours=12),
             "SERVER_NAME": None,
             "SESSION_COOKIE_DOMAIN": None,
             "SESSION_COOKIE_HTTPONLY": True,
             "SESSION_COOKIE_NAME": "session",
+            "SESSION_COOKIE_PARTITIONED": False,
             "SESSION_COOKIE_PATH": None,
             "SESSION_COOKIE_SAMESITE": None,
             "SESSION_COOKIE_SECURE": False,
@@ -310,17 +329,17 @@ class Quart(App):
         )
 
         self.after_serving_funcs: list[Callable[[], Awaitable[None]]] = []
-        self.after_websocket_funcs: dict[AppOrBlueprintKey, list[AfterWebsocketCallable]] = (
-            defaultdict(list)
-        )
-        self.background_tasks: WeakSet[asyncio.Task] = WeakSet()
+        self.after_websocket_funcs: dict[
+            AppOrBlueprintKey, list[AfterWebsocketCallable]
+        ] = defaultdict(list)
+        self.background_tasks: set[asyncio.Task] = set()
         self.before_serving_funcs: list[Callable[[], Awaitable[None]]] = []
-        self.before_websocket_funcs: dict[AppOrBlueprintKey, list[BeforeWebsocketCallable]] = (
-            defaultdict(list)
-        )
-        self.teardown_websocket_funcs: dict[AppOrBlueprintKey, list[TeardownCallable]] = (
-            defaultdict(list)
-        )
+        self.before_websocket_funcs: dict[
+            AppOrBlueprintKey, list[BeforeWebsocketCallable]
+        ] = defaultdict(list)
+        self.teardown_websocket_funcs: dict[
+            AppOrBlueprintKey, list[TeardownCallable]
+        ] = defaultdict(list)
         self.while_serving_gens: list[AsyncGenerator[None, None]] = []
 
         self.template_context_processors[None] = [_default_template_ctx_processor]
@@ -373,7 +392,7 @@ class Quart(App):
         self,
         path: FilePath,
         mode: str = "rb",
-    ) -> AiofilesContextManager[None, None, AsyncBufferedReader]:
+    ) -> AiofilesContextManager:
         """Open a file for reading.
 
         Use as
@@ -390,7 +409,7 @@ class Quart(App):
 
     async def open_instance_resource(
         self, path: FilePath, mode: str = "rb"
-    ) -> AiofilesContextManager[None, None, AsyncBufferedReader]:
+    ) -> AiofilesContextManager:
         """Open a file for reading.
 
         Use as
@@ -443,10 +462,10 @@ class Quart(App):
         elif has_websocket_context():
             names.extend(reversed(websocket_ctx.websocket.blueprints))  # type: ignore
 
-        extra_context: dict = {}
+        extra_context: dict[str, Any] = {}
         for name in names:
             for processor in self.template_context_processors[name]:
-                extra_context.update(await self.ensure_async(processor)())  # type: ignore
+                extra_context.update(await self.ensure_async(processor)())  # type: ignore[call-overload]
 
         original = context.copy()
         context.update(extra_context)
@@ -533,7 +552,9 @@ class Quart(App):
         self.after_serving_funcs.append(func)
         return func
 
-    def create_url_adapter(self, request: BaseRequestWebsocket | None) -> MapAdapter | None:
+    def create_url_adapter(
+        self, request: BaseRequestWebsocket | None
+    ) -> MapAdapter | None:
         """Create and return a URL adapter.
 
         This will create the adapter based on the request if present
@@ -541,7 +562,9 @@ class Quart(App):
         """
         if request is not None:
             subdomain = (
-                (self.url_map.default_subdomain or None) if not self.subdomain_matching else None
+                (self.url_map.default_subdomain or None)
+                if not self.subdomain_matching
+                else None
             )
 
             return self.url_map.bind_to_request(  # type: ignore[attr-defined]
@@ -714,7 +737,8 @@ class Quart(App):
 
         if url_adapter is None:
             raise RuntimeError(
-                "Unable to create a url adapter, try setting the SERVER_NAME config variable."
+                "Unable to create a url adapter, try setting the SERVER_NAME"
+                " config variable."
             )
         if _scheme is not None and not _external:
             raise ValueError("External must be True for scheme usage")
@@ -727,7 +751,9 @@ class Quart(App):
             url_adapter.url_scheme = _scheme
 
         try:
-            url = url_adapter.build(endpoint, values, method=_method, force_external=_external)
+            url = url_adapter.build(
+                endpoint, values, method=_method, force_external=_external
+            )
         except BuildError as error:
             return self.handle_url_build_error(error, endpoint, values)
         finally:
@@ -814,7 +840,9 @@ class Quart(App):
         for signal_name in {"SIGINT", "SIGTERM", "SIGBREAK"}:
             if hasattr(signal, signal_name):
                 try:
-                    loop.add_signal_handler(getattr(signal, signal_name), _signal_handler)
+                    loop.add_signal_handler(
+                        getattr(signal, signal_name), _signal_handler
+                    )
                 except NotImplementedError:
                     # Add signal handler may not be implemented on Windows
                     signal.signal(getattr(signal, signal_name), _signal_handler)
@@ -856,7 +884,9 @@ class Quart(App):
         tasks = [loop.create_task(task)]
 
         if use_reloader:
-            tasks.append(loop.create_task(observe_changes(asyncio.sleep, shutdown_event)))
+            tasks.append(
+                loop.create_task(observe_changes(asyncio.sleep, shutdown_event))
+            )
 
         reload_ = False
         try:
@@ -919,9 +949,11 @@ class Quart(App):
 
         return serve(self, config, shutdown_trigger=shutdown_trigger)
 
-    def test_client(self, use_cookies: bool = True) -> TestClientProtocol:
+    def test_client(
+        self, use_cookies: bool = True, **kwargs: Any
+    ) -> TestClientProtocol:
         """Creates and returns a test client."""
-        return self.test_client_class(self, use_cookies=use_cookies)
+        return self.test_client_class(self, use_cookies=use_cookies, **kwargs)
 
     def test_cli_runner(self, **kwargs: Any) -> QuartCliRunner:
         """Creates and returns a CLI test runner."""
@@ -975,6 +1007,26 @@ class Quart(App):
         self.after_websocket_funcs[None].append(func)
         return func
 
+    @setupmethod
+    def teardown_websocket(
+        self,
+        func: T_teardown,
+    ) -> T_teardown:
+        """Add a teardown websocket function.
+        This is designed to be used as a decorator, if used to
+        decorate a synchronous function, the function will be wrapped
+        in :func:`~quart.utils.run_sync` and run in a thread executor
+        (with the wrapped function returned). An example usage,
+        .. code-block:: python
+            @app.teardown_websocket
+            async def func():
+                ...
+        Arguments:
+            func: The teardown websocket function itself.
+        """
+        self.teardown_websocket_funcs[None].append(func)
+        return func
+
     async def handle_http_exception(
         self, error: HTTPException
     ) -> HTTPException | ResponseReturnValue:
@@ -999,9 +1051,11 @@ class Quart(App):
         if handler is None:
             return error
         else:
-            return await self.ensure_async(handler)(error)  # type: ignore
+            return await self.ensure_async(handler)(error)  # type: ignore[return-value]
 
-    async def handle_user_exception(self, error: Exception) -> HTTPException | ResponseReturnValue:
+    async def handle_user_exception(
+        self, error: Exception
+    ) -> HTTPException | ResponseReturnValue:
         """Handle an exception that has been raised.
 
         This should forward :class:`~quart.exception.HTTPException` to
@@ -1025,7 +1079,7 @@ class Quart(App):
         handler = self._find_error_handler(error, blueprints)
         if handler is None:
             raise error
-        return await self.ensure_async(handler)(error)  # type: ignore
+        return await self.ensure_async(handler)(error)  # type: ignore[return-value]
 
     async def handle_exception(self, error: Exception) -> ResponseTypes:
         """Handle an uncaught exception.
@@ -1035,7 +1089,9 @@ class Quart(App):
         """
         exc_info = sys.exc_info()
         await got_request_exception.send_async(
-            self, _sync_wrapper=self.ensure_async, exception=error
+            self,
+            _sync_wrapper=self.ensure_async,  # type: ignore[arg-type]
+            exception=error,
         )
         propagate = self.config["PROPAGATE_EXCEPTIONS"]
 
@@ -1056,18 +1112,22 @@ class Quart(App):
         handler = self._find_error_handler(server_error, request.blueprints)
 
         if handler is not None:
-            server_error = await self.ensure_async(handler)(server_error)  # type: ignore
+            server_error = await self.ensure_async(handler)(server_error)  # type: ignore[assignment]
 
         return await self.finalize_request(server_error, from_error_handler=True)
 
-    async def handle_websocket_exception(self, error: Exception) -> ResponseTypes | None:
+    async def handle_websocket_exception(
+        self, error: Exception
+    ) -> ResponseTypes | None:
         """Handle an uncaught exception.
 
         By default this logs the exception and then re-raises it.
         """
         exc_info = sys.exc_info()
         await got_websocket_exception.send_async(
-            self, _sync_wrapper=self.ensure_async, exception=error
+            self,
+            _sync_wrapper=self.ensure_async,  # type: ignore[arg-type]
+            exception=error,
         )
         propagate = self.config["PROPAGATE_EXCEPTIONS"]
 
@@ -1088,13 +1148,15 @@ class Quart(App):
         handler = self._find_error_handler(server_error, websocket.blueprints)
 
         if handler is not None:
-            server_error = await self.ensure_async(handler)(server_error)  # type: ignore
+            server_error = await self.ensure_async(handler)(server_error)  # type: ignore[assignment]
 
         return await self.finalize_websocket(server_error, from_error_handler=True)
 
     def log_exception(
         self,
-        exception_info: tuple[type, BaseException, TracebackType] | tuple[None, None, None],
+        exception_info: (
+            tuple[type, BaseException, TracebackType] | tuple[None, None, None]
+        ),
     ) -> None:
         """Log a exception to the :attr:`logger`.
 
@@ -1103,22 +1165,27 @@ class Quart(App):
         if has_request_context():
             request_ = request_ctx.request
             self.logger.error(
-                f"Exception on request {request_.method} {request_.path}", exc_info=exception_info
+                f"Exception on request {request_.method} {request_.path}",
+                exc_info=exception_info,
             )
         elif has_websocket_context():
             websocket_ = websocket_ctx.websocket
-            self.logger.error(f"Exception on websocket {websocket_.path}", exc_info=exception_info)
+            self.logger.error(
+                f"Exception on websocket {websocket_.path}", exc_info=exception_info
+            )
         else:
             self.logger.error("Exception", exc_info=exception_info)
 
     @overload
-    def ensure_async(self, func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]: ...
+    def ensure_async(
+        self, func: Callable[P, Awaitable[T]]
+    ) -> Callable[P, Awaitable[T]]: ...
 
     @overload
     def ensure_async(self, func: Callable[P, T]) -> Callable[P, Awaitable[T]]: ...
 
     def ensure_async(
-        self, func: Union[Callable[P, Awaitable[T]], Callable[P, T]]
+        self, func: Callable[P, Awaitable[T]] | Callable[P, T]
     ) -> Callable[P, Awaitable[T]]:
         """Ensure that the returned func is async and calls the func.
 
@@ -1128,7 +1195,7 @@ class Quart(App):
         run. Before Quart 0.11 this did not run the synchronous code
         in an executor.
         """
-        if asyncio.iscoroutinefunction(func):
+        if iscoroutinefunction(func):
             return func
         else:
             return self.sync_to_async(cast(Callable[P, T], func))
@@ -1161,10 +1228,16 @@ class Quart(App):
             for function in reversed(self.teardown_request_funcs[name]):
                 await self.ensure_async(function)(exc)
 
-        await request_tearing_down.send_async(self, _sync_wrapper=self.ensure_async, exc=exc)
+        await request_tearing_down.send_async(
+            self,
+            _sync_wrapper=self.ensure_async,  # type: ignore[arg-type]
+            exc=exc,
+        )
 
     async def do_teardown_websocket(
-        self, exc: BaseException | None, websocket_context: WebsocketContext | None = None
+        self,
+        exc: BaseException | None,
+        websocket_context: WebsocketContext | None = None,
     ) -> None:
         """Teardown the websocket, calling the teardown functions.
 
@@ -1179,13 +1252,21 @@ class Quart(App):
             for function in reversed(self.teardown_websocket_funcs[name]):
                 await self.ensure_async(function)(exc)
 
-        await websocket_tearing_down.send_async(self, _sync_wrapper=self.ensure_async, exc=exc)
+        await websocket_tearing_down.send_async(
+            self,
+            _sync_wrapper=self.ensure_async,  # type: ignore[arg-type]
+            exc=exc,
+        )
 
     async def do_teardown_appcontext(self, exc: BaseException | None) -> None:
         """Teardown the app (context), calling the teardown functions."""
         for function in self.teardown_appcontext_funcs:
             await self.ensure_async(function)(exc)
-        await appcontext_tearing_down.send_async(self, _sync_wrapper=self.ensure_async, exc=exc)
+        await appcontext_tearing_down.send_async(
+            self,
+            _sync_wrapper=self.ensure_async,  # type: ignore[arg-type]
+            exc=exc,
+        )
 
     def app_context(self) -> AppContext:
         """Create and return an app context.
@@ -1279,7 +1360,9 @@ class Quart(App):
             auth,
             subdomain,
         )
-        request_body, body_headers = make_test_body_with_headers(data=data, form=form, json=json)
+        request_body, body_headers = make_test_body_with_headers(
+            data=data, form=form, json=json
+        )
         headers.update(**body_headers)
         scope = make_test_scope(
             "http",
@@ -1316,10 +1399,13 @@ class Quart(App):
 
         task = asyncio.get_event_loop().create_task(_wrapper())
         self.background_tasks.add(task)
+        task.add_done_callback(self.background_tasks.discard)
 
     async def handle_background_exception(self, error: Exception) -> None:
         await got_background_exception.send_async(
-            self, _sync_wrapper=self.ensure_async, exception=error
+            self,
+            _sync_wrapper=self.ensure_async,  # type: ignore[arg-type]
+            exception=error,
         )
 
         self.log_exception(sys.exc_info())
@@ -1329,7 +1415,9 @@ class Quart(App):
         methods = request_ctx.url_adapter.allowed_methods()
         return self.response_class("", headers={"Allow": ", ".join(methods)})
 
-    async def make_response(self, result: ResponseReturnValue | HTTPException) -> ResponseTypes:
+    async def make_response(
+        self, result: ResponseReturnValue | HTTPException
+    ) -> ResponseTypes:
         """Make a Response from the result of the route handler.
 
         The result itself can either be:
@@ -1361,7 +1449,9 @@ class Quart(App):
             value = result  # type: ignore[assignment]
 
         if value is None:
-            raise TypeError("The response value returned by the view function cannot be None")
+            raise TypeError(
+                "The response value returned by the view function cannot be None"
+            )
 
         response: ResponseTypes
         if isinstance(value, HTTPException):
@@ -1376,7 +1466,9 @@ class Quart(App):
             elif isinstance(value, (list, dict)):
                 response = self.json.response(value)  # type: ignore[assignment]
             else:
-                raise TypeError(f"The response value type ({type(value).__name__}) is not valid")
+                raise TypeError(
+                    f"The response value type ({type(value).__name__}) is not valid"
+                )
         else:
             response = value
 
@@ -1384,7 +1476,7 @@ class Quart(App):
             response.status_code = int(status)
 
         if headers is not None:
-            response.headers.update(headers)  # type: ignore[arg-type]
+            response.headers.update(headers)
 
         return response
 
@@ -1422,7 +1514,7 @@ class Quart(App):
                 omits this argument.
         """
         try:
-            await request_started.send_async(self, _sync_wrapper=self.ensure_async)
+            await request_started.send_async(self, _sync_wrapper=self.ensure_async)  # type: ignore
 
             result: ResponseReturnValue | HTTPException | None
             result = await self.preprocess_request(request_context)
@@ -1442,7 +1534,10 @@ class Quart(App):
                 the Flask convention.
         """
         try:
-            await websocket_started.send_async(self, _sync_wrapper=self.ensure_async)
+            await websocket_started.send_async(
+                self,
+                _sync_wrapper=self.ensure_async,  # type: ignore
+            )
 
             result: ResponseReturnValue | HTTPException | None
             result = await self.preprocess_websocket(websocket_context)
@@ -1471,7 +1566,7 @@ class Quart(App):
             for function in self.before_request_funcs[name]:
                 result = await self.ensure_async(function)()
                 if result is not None:
-                    return result  # type: ignore
+                    return result  # type: ignore[return-value]
 
         return None
 
@@ -1497,7 +1592,7 @@ class Quart(App):
             for function in self.before_websocket_funcs[name]:
                 result = await self.ensure_async(function)()
                 if result is not None:
-                    return result  # type: ignore
+                    return result  # type: ignore[return-value]
 
         return None
 
@@ -1521,7 +1616,7 @@ class Quart(App):
             return await self.make_default_options_response()
 
         handler = self.view_functions[request_.url_rule.endpoint]
-        return await self.ensure_async(handler)(**request_.view_args)  # type: ignore
+        return await self.ensure_async(handler)(**request_.view_args)  # type: ignore[return-value]
 
     async def dispatch_websocket(
         self, websocket_context: WebsocketContext | None = None
@@ -1537,7 +1632,7 @@ class Quart(App):
             self.raise_routing_exception(websocket_)
 
         handler = self.view_functions[websocket_.url_rule.endpoint]
-        return await self.ensure_async(handler)(**websocket_.view_args)  # type: ignore
+        return await self.ensure_async(handler)(**websocket_.view_args)  # type: ignore[return-value]
 
     async def finalize_request(
         self,
@@ -1556,7 +1651,9 @@ class Quart(App):
         try:
             response = await self.process_response(response, request_context)
             await request_finished.send_async(
-                self, _sync_wrapper=self.ensure_async, response=response
+                self,
+                _sync_wrapper=self.ensure_async,  # type: ignore[arg-type]
+                response=response,
             )
         except Exception:
             if not from_error_handler:
@@ -1584,7 +1681,9 @@ class Quart(App):
         try:
             response = await self.postprocess_websocket(response, websocket_context)
             await websocket_finished.send_async(
-                self, _sync_wrapper=self.ensure_async, response=response
+                self,
+                _sync_wrapper=self.ensure_async,  # type: ignore[arg-type]
+                response=response,
             )
         except Exception:
             if not from_error_handler:
@@ -1607,7 +1706,7 @@ class Quart(App):
         names = [*(request_context or request_ctx).request.blueprints, None]
 
         for function in (request_context or request_ctx)._after_request_functions:
-            response = await self.ensure_async(function)(response)  # type: ignore
+            response = await self.ensure_async(function)(response)  # type: ignore[assignment]
 
         for name in names:
             for function in reversed(self.after_request_funcs[name]):
@@ -1615,7 +1714,9 @@ class Quart(App):
 
         session_ = (request_context or request_ctx).session
         if not self.session_interface.is_null_session(session_):
-            await self.ensure_async(self.session_interface.save_session)(self, session_, response)
+            await self.ensure_async(self.session_interface.save_session)(
+                self, session_, response
+            )
         return response
 
     async def postprocess_websocket(
@@ -1633,11 +1734,11 @@ class Quart(App):
         names = [*(websocket_context or websocket_ctx).websocket.blueprints, None]
 
         for function in (websocket_context or websocket_ctx)._after_websocket_functions:
-            response = await self.ensure_async(function)(response)  # type: ignore
+            response = await self.ensure_async(function)(response)  # type: ignore[assignment]
 
         for name in names:
             for function in reversed(self.after_websocket_funcs[name]):
-                response = await self.ensure_async(function)(response)  # type: ignore
+                response = await self.ensure_async(function)(response)  # type: ignore[assignment]
 
         session_ = (websocket_context or websocket_ctx).session
         if not self.session_interface.is_null_session(session_):
@@ -1691,7 +1792,9 @@ class Quart(App):
                     await gen.__anext__()
         except Exception as error:
             await got_serving_exception.send_async(
-                self, _sync_wrapper=self.ensure_async, exception=error
+                self,
+                _sync_wrapper=self.ensure_async,  # type: ignore[arg-type]
+                exception=error,
             )
             self.log_exception(sys.exc_info())
             raise
@@ -1704,7 +1807,7 @@ class Quart(App):
                 timeout=self.config["BACKGROUND_TASK_SHUTDOWN_TIMEOUT"],
             )
         except asyncio.TimeoutError:
-            await cancel_tasks(self.background_tasks)  # type: ignore
+            await cancel_tasks(self.background_tasks)
 
         try:
             async with self.app_context():
@@ -1719,7 +1822,9 @@ class Quart(App):
                         raise RuntimeError("While serving generator didn't terminate")
         except Exception as error:
             await got_serving_exception.send_async(
-                self, _sync_wrapper=self.ensure_async, exception=error
+                self,
+                _sync_wrapper=self.ensure_async,  # type: ignore[arg-type]
+                exception=error,
             )
             self.log_exception(sys.exc_info())
             raise

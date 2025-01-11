@@ -1,20 +1,26 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, AnyStr, Awaitable, Callable, Generator, NoReturn, overload
+from collections.abc import Awaitable
+from collections.abc import Generator
+from typing import Any
+from typing import Callable
+from typing import Literal
+from typing import NoReturn
+from typing import overload
 
 from hypercorn.typing import HTTPScope
-from werkzeug.datastructures import CombinedMultiDict, Headers, iter_multi_items, MultiDict
-from werkzeug.exceptions import BadRequest, RequestEntityTooLarge, RequestTimeout
+from werkzeug.datastructures import CombinedMultiDict
+from werkzeug.datastructures import Headers
+from werkzeug.datastructures import iter_multi_items
+from werkzeug.datastructures import MultiDict
+from werkzeug.exceptions import BadRequest
+from werkzeug.exceptions import RequestEntityTooLarge
+from werkzeug.exceptions import RequestTimeout
 
-from .base import BaseRequestWebsocket
 from ..formparser import FormDataParser
 from ..globals import current_app
-
-try:
-    from typing import Literal
-except ImportError:
-    from typing_extensions import Literal  # type: ignore
+from .base import BaseRequestWebsocket
 
 SERVER_PUSH_HEADERS_TO_COPY = {
     "accept",
@@ -42,7 +48,9 @@ class Body:
     it.
     """
 
-    def __init__(self, expected_content_length: int | None, max_content_length: int | None) -> None:
+    def __init__(
+        self, expected_content_length: int | None, max_content_length: int | None
+    ) -> None:
         self._data = bytearray()
         self._complete: asyncio.Event = asyncio.Event()
         self._has_data: asyncio.Event = asyncio.Event()
@@ -97,7 +105,10 @@ class Body:
             return
         self._data.extend(data)
         self._has_data.set()
-        if self._max_content_length is not None and len(self._data) > self._max_content_length:
+        if (
+            self._max_content_length is not None
+            and len(self._data) > self._max_content_length
+        ):
             self._must_raise = RequestEntityTooLarge()
             self.set_complete()
 
@@ -130,6 +141,9 @@ class Request(BaseRequestWebsocket):
     body_class = Body
     form_data_parser_class = FormDataParser
     lock_class = asyncio.Lock
+    _max_content_length: int | None = None
+    _max_form_memory_size: int | None = None
+    _max_form_parts: int | None = None
 
     def __init__(
         self,
@@ -179,12 +193,54 @@ class Request(BaseRequestWebsocket):
         self._send_push_promise = send_push_promise
 
     @property
+    def max_content_length(self) -> int | None:
+        if self._max_content_length is not None:
+            return self._max_content_length
+
+        if current_app:
+            return current_app.config["MAX_CONTENT_LENGTH"]
+
+        return None
+
+    @max_content_length.setter
+    def max_content_length(self, value: int | None) -> None:
+        self._max_content_length = value
+
+    @property
+    def max_form_memory_size(self) -> int | None:
+        if self._max_form_memory_size is not None:
+            return self._max_form_memory_size
+
+        if current_app:
+            return current_app.config["MAX_FORM_MEMORY_SIZE"]
+
+        return None
+
+    @max_form_memory_size.setter
+    def max_form_memory_size(self, value: int | None) -> None:
+        self._max_form_memory_size = value
+
+    @property
+    def max_form_parts(self) -> int | None:
+        if self._max_form_parts is not None:
+            return self._max_form_parts
+
+        if current_app:
+            return current_app.config["MAX_FORM_PARTS"]
+
+        return None
+
+    @max_form_parts.setter
+    def max_form_parts(self, value: int | None) -> None:
+        self._max_form_parts = value
+
+    @property
     async def stream(self) -> NoReturn:
         raise NotImplementedError("Use body instead")
 
     @property
     async def data(self) -> bytes:
-        return await self.get_data(as_text=False, parse_form_data=True)
+        return await self.get_data(as_text=False, parse_form_data=True)  # type: ignore
 
     @overload
     async def get_data(
@@ -192,21 +248,23 @@ class Request(BaseRequestWebsocket):
     ) -> bytes: ...
 
     @overload
-    async def get_data(self, cache: bool, as_text: Literal[True], parse_form_data: bool) -> str: ...
+    async def get_data(
+        self, cache: bool, as_text: Literal[True], parse_form_data: bool
+    ) -> str: ...
 
     @overload
     async def get_data(
         self, cache: bool = True, as_text: bool = False, parse_form_data: bool = False
-    ) -> AnyStr: ...
+    ) -> str | bytes: ...
 
     async def get_data(
         self, cache: bool = True, as_text: bool = False, parse_form_data: bool = False
-    ) -> AnyStr:
+    ) -> str | bytes:
         """Get the request body data.
 
         Arguments:
             cache: If False the body data will be cleared, resulting in any
-                subsequent calls returning an empty AnyStr and reducing
+                subsequent calls returning an empty str | bytes and reducing
                 memory usage.
             as_text: If True the data is returned as a decoded string,
                 otherwise raw bytes are returned.
@@ -218,8 +276,8 @@ class Request(BaseRequestWebsocket):
 
         try:
             raw_data = await asyncio.wait_for(self.body, timeout=self.body_timeout)
-        except asyncio.TimeoutError:
-            raise RequestTimeout()
+        except asyncio.TimeoutError as e:
+            raise RequestTimeout() from e
         else:
             if not cache:
                 self.body.clear()
@@ -271,6 +329,8 @@ class Request(BaseRequestWebsocket):
     def make_form_data_parser(self) -> FormDataParser:
         return self.form_data_parser_class(
             max_content_length=self.max_content_length,
+            max_form_memory_size=self.max_form_memory_size,
+            max_form_parts=self.max_form_parts,
             cls=self.parameter_storage_class,
         )
 
@@ -288,14 +348,16 @@ class Request(BaseRequestWebsocket):
                         ),
                         timeout=self.body_timeout,
                     )
-                except asyncio.TimeoutError:
-                    raise RequestTimeout()
+                except asyncio.TimeoutError as e:
+                    raise RequestTimeout() from e
 
     @property
     async def json(self) -> Any:
         return await self.get_json()
 
-    async def get_json(self, force: bool = False, silent: bool = False, cache: bool = True) -> Any:
+    async def get_json(
+        self, force: bool = False, silent: bool = False, cache: bool = True
+    ) -> Any:
         """Parses the body data as JSON and returns it.
 
         Arguments:

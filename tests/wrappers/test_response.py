@@ -1,20 +1,27 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from collections.abc import AsyncGenerator
+from datetime import datetime
+from datetime import timezone
 from http import HTTPStatus
 from io import BytesIO
 from pathlib import Path
-from typing import Any, AsyncGenerator
+from typing import Any
 
 import pytest
-from hypothesis import given, strategies as strategies
+from hypothesis import given
+from hypothesis import strategies as strategies
 from werkzeug.datastructures import Headers
 from werkzeug.exceptions import RequestedRangeNotSatisfiable
 
 from quart.testing import no_op_push
 from quart.typing import HTTPScope
 from quart.wrappers import Request
-from quart.wrappers.response import DataBody, FileBody, IOBody, IterableBody, Response
+from quart.wrappers.response import DataBody
+from quart.wrappers.response import FileBody
+from quart.wrappers.response import IOBody
+from quart.wrappers.response import IterableBody
+from quart.wrappers.response import Response
 
 
 async def test_data_wrapper() -> None:
@@ -32,7 +39,8 @@ async def _simple_async_generator() -> AsyncGenerator[bytes, None]:
 
 
 @pytest.mark.parametrize(
-    "iterable", [[b"abc", b"def"], (data for data in [b"abc", b"def"]), _simple_async_generator()]
+    "iterable",
+    [[b"abc", b"def"], (data for data in [b"abc", b"def"]), _simple_async_generator()],
 )
 async def test_iterable_wrapper(iterable: Any) -> None:
     wrapper = IterableBody(iterable)
@@ -73,9 +81,9 @@ def test_response_status(status: Any, expected: int) -> None:
 
 async def test_response_body() -> None:
     response = Response(b"Body")
-    assert b"Body" == (await response.get_data())  # type: ignore
+    assert b"Body" == (await response.get_data())
     # Fetch again to ensure it isn't exhausted
-    assert b"Body" == (await response.get_data())  # type: ignore
+    assert b"Body" == (await response.get_data())
 
 
 async def test_response_make_conditional(http_scope: HTTPScope) -> None:
@@ -92,22 +100,30 @@ async def test_response_make_conditional(http_scope: HTTPScope) -> None:
     )
     response = Response(b"abcdef")
     await response.make_conditional(request, accept_ranges=True, complete_length=6)
-    assert b"abcd" == (await response.get_data())  # type: ignore
+    assert b"abcd" == (await response.get_data())
     assert response.status_code == 206
     assert response.accept_ranges == "bytes"
     assert response.content_range.units == "bytes"
     assert response.content_range.start == 0
-    assert response.content_range.stop == 3
+    assert response.content_range.stop == 4
     assert response.content_range.length == 6
 
 
 async def test_response_make_conditional_no_condition(http_scope: HTTPScope) -> None:
     request = Request(
-        "GET", "https", "/", b"", Headers(), "", "1.1", http_scope, send_push_promise=no_op_push
+        "GET",
+        "https",
+        "/",
+        b"",
+        Headers(),
+        "",
+        "1.1",
+        http_scope,
+        send_push_promise=no_op_push,
     )
     response = Response(b"abcdef")
     await response.make_conditional(request, complete_length=6)
-    assert b"abcdef" == (await response.get_data())  # type: ignore
+    assert b"abcdef" == (await response.get_data())
     assert response.status_code == 200
 
 
@@ -125,7 +141,7 @@ async def test_response_make_conditional_out_of_bound(http_scope: HTTPScope) -> 
     )
     response = Response(b"abcdef")
     await response.make_conditional(request, complete_length=6)
-    assert b"abcdef" == (await response.get_data())  # type: ignore
+    assert b"abcdef" == (await response.get_data())
     assert response.status_code == 206
 
 
@@ -145,7 +161,7 @@ async def test_response_make_conditional_not_modified(http_scope: HTTPScope) -> 
     )
     await response.make_conditional(request)
     assert response.status_code == 304
-    assert b"" == (await response.get_data())  # type: ignore
+    assert b"" == (await response.get_data())
     assert "content-length" not in response.headers
 
 
@@ -182,7 +198,7 @@ def test_response_cache_control() -> None:
 
 async def test_empty_response() -> None:
     response = Response()
-    assert b"" == (await response.get_data())  # type: ignore
+    assert b"" == (await response.get_data())
 
 
 @given(
