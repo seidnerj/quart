@@ -4,15 +4,14 @@ import asyncio
 
 import pytest
 
-from quart import (
-    Blueprint,
-    g,
-    Quart,
-    render_template_string,
-    ResponseReturnValue,
-    session,
-    stream_template_string,
-)
+from quart import Blueprint
+from quart import g
+from quart import Quart
+from quart import render_template_string
+from quart import Response
+from quart import ResponseReturnValue
+from quart import session
+from quart import stream_template_string
 
 
 @pytest.fixture(scope="function")
@@ -136,7 +135,9 @@ async def test_template_tests(app: Quart, blueprint: Blueprint) -> None:
     assert rendered == "foo"
 
     async with app.test_request_context("/"):
-        rendered = await render_template_string("{% if 5 is blueprint_test %}bar{% endif %}")
+        rendered = await render_template_string(
+            "{% if 5 is blueprint_test %}bar{% endif %}"
+        )
     assert rendered == "bar"
 
 
@@ -148,3 +149,11 @@ async def test_simple_stream(app: Quart) -> None:
     test_client = app.test_client()
     response = await test_client.get("/")
     assert (await response.data) == b"42"
+
+    @app.get("/2")
+    async def index2() -> ResponseReturnValue:
+        return Response(await stream_template_string("{{ config }}", config=43))
+
+    test_client = app.test_client()
+    response = await test_client.get("/2")
+    assert (await response.data) == b"43"

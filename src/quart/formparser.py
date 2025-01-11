@@ -1,23 +1,26 @@
 from __future__ import annotations
 
-from typing import (
-    Any,
-    Awaitable,
-    Callable,
-    cast,
-    Dict,
-    IO,
-    NoReturn,
-    Optional,
-    Tuple,
-    TYPE_CHECKING,
-)
+from collections.abc import Awaitable
+from typing import Any
+from typing import Callable
+from typing import cast
+from typing import IO
+from typing import NoReturn
+from typing import Optional
+from typing import TYPE_CHECKING
 from urllib.parse import parse_qsl
 
-from werkzeug.datastructures import Headers, MultiDict
+from werkzeug.datastructures import Headers
+from werkzeug.datastructures import MultiDict
+from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.formparser import default_stream_factory
 from werkzeug.http import parse_options_header
-from werkzeug.sansio.multipart import Data, Epilogue, Field, File, MultipartDecoder, NeedData
+from werkzeug.sansio.multipart import Data
+from werkzeug.sansio.multipart import Epilogue
+from werkzeug.sansio.multipart import Field
+from werkzeug.sansio.multipart import File
+from werkzeug.sansio.multipart import MultipartDecoder
+from werkzeug.sansio.multipart import NeedData
 
 from .datastructures import FileStorage
 
@@ -30,8 +33,8 @@ StreamFactory = Callable[
 ]
 
 ParserFunc = Callable[
-    ["FormDataParser", "Body", str, Optional[int], Dict[str, str]],
-    Awaitable[Tuple[MultiDict, MultiDict]],
+    ["FormDataParser", "Body", str, Optional[int], dict[str, str]],
+    Awaitable[tuple[MultiDict, MultiDict]],
 ]
 
 
@@ -40,17 +43,24 @@ class FormDataParser:
 
     def __init__(
         self,
-        stream_factory: StreamFactory = default_stream_factory,
-        max_form_memory_size: int | None = None,
-        max_content_length: int | None = None,
+        *,
         cls: type[MultiDict] | None = MultiDict,
+        max_content_length: int | None = None,
+        max_form_memory_size: int | None = None,
+        max_form_parts: int | None = None,
         silent: bool = True,
+        stream_factory: StreamFactory = default_stream_factory,
     ) -> None:
-        self.stream_factory = stream_factory
         self.cls = cls
+        self.max_content_length = max_content_length
+        self.max_form_memory_size = max_form_memory_size
+        self.max_form_parts = max_form_parts
         self.silent = silent
+        self.stream_factory = stream_factory
 
-    def get_parse_func(self, mimetype: str, options: dict[str, str]) -> ParserFunc | None:
+    def get_parse_func(
+        self, mimetype: str, options: dict[str, str]
+    ) -> ParserFunc | None:
         return self.parse_functions.get(mimetype)
 
     async def parse(
@@ -82,9 +92,12 @@ class FormDataParser:
         options: dict[str, str],
     ) -> tuple[MultiDict, MultiDict]:
         parser = MultiPartParser(
-            self.stream_factory,
             cls=self.cls,
             file_storage_cls=self.file_storage_class,
+            max_content_length=self.max_content_length,
+            max_form_memory_size=self.max_form_memory_size,
+            max_form_parts=self.max_form_parts,
+            stream_factory=self.stream_factory,
         )
         boundary = options.get("boundary", "").encode("ascii")
 
@@ -116,17 +129,22 @@ class FormDataParser:
 class MultiPartParser:
     def __init__(
         self,
-        stream_factory: StreamFactory = default_stream_factory,
-        max_form_memory_size: int | None = None,
-        cls: type[MultiDict] = MultiDict,
+        *,
         buffer_size: int = 64 * 1024,
+        cls: type[MultiDict] = MultiDict,
         file_storage_cls: type[FileStorage] = FileStorage,
+        max_content_length: int | None = None,
+        max_form_memory_size: int | None = None,
+        max_form_parts: int | None = None,
+        stream_factory: StreamFactory = default_stream_factory,
     ) -> None:
-        self.max_form_memory_size = max_form_memory_size
-        self.stream_factory = stream_factory
-        self.cls = cls
         self.buffer_size = buffer_size
+        self.cls = cls
         self.file_storage_cls = file_storage_cls
+        self.max_content_length = max_content_length
+        self.max_form_memory_size = max_form_memory_size
+        self.max_form_parts = max_form_parts
+        self.stream_factory = stream_factory
 
     def fail(self, message: str) -> NoReturn:
         raise ValueError(message)
@@ -167,25 +185,36 @@ class MultiPartParser:
         container: IO[bytes] | list[bytes]
         _write: Callable[[bytes], Any]
 
-        parser = MultipartDecoder(boundary, self.max_form_memory_size)
+        parser = MultipartDecoder(
+            boundary, self.max_content_length, max_parts=self.max_form_parts
+        )
 
         fields = []
         files = []
 
         current_part: Field | File
+        field_size: int | None = None
         async for data in body:
             parser.receive_data(data)
             event = parser.next_event()
             while not isinstance(event, (Epilogue, NeedData)):
                 if isinstance(event, Field):
                     current_part = event
+                    field_size = 0
                     container = []
                     _write = container.append
                 elif isinstance(event, File):
                     current_part = event
+                    field_size = None
                     container = self.start_file_streaming(event, content_length)
                     _write = container.write
                 elif isinstance(event, Data):
+                    if self.max_form_memory_size is not None and field_size is not None:
+                        field_size += len(event.data)
+
+                        if field_size > self.max_form_memory_size:
+                            raise RequestEntityTooLarge()
+
                     _write(event.data)
                     if not event.more_data:
                         if isinstance(current_part, Field):

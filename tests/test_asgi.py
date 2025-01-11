@@ -1,23 +1,27 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
+from unittest.mock import Mock
 
 import pytest
-from hypercorn.typing import ASGIReceiveEvent, ASGISendEvent, HTTPScope, WebsocketScope
+from hypercorn.typing import ASGIReceiveEvent
+from hypercorn.typing import ASGISendEvent
+from hypercorn.typing import HTTPScope
+from hypercorn.typing import WebsocketScope
 from werkzeug.datastructures import Headers
 
 from quart import Quart
-from quart.asgi import (
-    _convert_version,
-    _handle_exception,
-    ASGIHTTPConnection,
-    ASGIWebsocketConnection,
-)
+from quart.asgi import _convert_version
+from quart.asgi import _handle_exception
+from quart.asgi import ASGIHTTPConnection
+from quart.asgi import ASGIWebsocketConnection
 from quart.utils import encode_headers
 
 
-@pytest.mark.parametrize("headers, expected", [([(b"host", b"quart")], "quart"), ([], "")])
+@pytest.mark.parametrize(
+    "headers, expected", [([(b"host", b"quart")], "quart"), ([], "")]
+)
 async def test_http_1_0_host_header(headers: list, expected: str) -> None:
     app = Quart(__name__)
     scope: HTTPScope = {
@@ -34,6 +38,7 @@ async def test_http_1_0_host_header(headers: list, expected: str) -> None:
         "client": ("127.0.0.1", 80),
         "server": None,
         "extensions": {},
+        "state": {},  # type: ignore[typeddict-item]
     }
     connection = ASGIHTTPConnection(app, scope)
     request = connection._create_request_from_scope(lambda: None)  # type: ignore
@@ -57,6 +62,7 @@ async def test_http_completion() -> None:
         "client": ("127.0.0.1", 80),
         "server": None,
         "extensions": {},
+        "state": {},  # type: ignore[typeddict-item]
     }
     connection = ASGIHTTPConnection(app, scope)
 
@@ -98,6 +104,7 @@ async def test_http_request_without_body(request_message: dict) -> None:
         "client": ("127.0.0.1", 80),
         "server": None,
         "extensions": {},
+        "state": {},  # type: ignore[typeddict-item]
     }
     connection = ASGIHTTPConnection(app, scope)
     request = connection._create_request_from_scope(lambda: None)  # type: ignore
@@ -135,6 +142,7 @@ async def test_websocket_completion() -> None:
         "server": None,
         "subprotocols": [],
         "extensions": {"websocket.http.response": {}},
+        "state": {},  # type: ignore[typeddict-item]
     }
     connection = ASGIWebsocketConnection(app, scope)
 
@@ -168,6 +176,7 @@ def test_http_path_from_absolute_target() -> None:
         "client": ("127.0.0.1", 80),
         "server": None,
         "extensions": {},
+        "state": {},  # type: ignore[typeddict-item]
     }
     connection = ASGIHTTPConnection(app, scope)
     request = connection._create_request_from_scope(lambda: None)  # type: ignore
@@ -194,6 +203,7 @@ def test_http_path_with_root_path(path: str, expected: str) -> None:
         "client": ("127.0.0.1", 80),
         "server": None,
         "extensions": {},
+        "state": {},  # type: ignore[typeddict-item]
     }
     connection = ASGIHTTPConnection(app, scope)
     request = connection._create_request_from_scope(lambda: None)  # type: ignore
@@ -216,6 +226,7 @@ def test_websocket_path_from_absolute_target() -> None:
         "server": None,
         "subprotocols": [],
         "extensions": {"websocket.http.response": {}},
+        "state": {},  # type: ignore[typeddict-item]
     }
     connection = ASGIWebsocketConnection(app, scope)
     websocket = connection._create_websocket_from_scope(lambda: None)  # type: ignore
@@ -242,6 +253,7 @@ def test_websocket_path_with_root_path(path: str, expected: str) -> None:
         "server": None,
         "subprotocols": [],
         "extensions": {"websocket.http.response": {}},
+        "state": {},  # type: ignore[typeddict-item]
     }
     connection = ASGIWebsocketConnection(app, scope)
     websocket = connection._create_websocket_from_scope(lambda: None)  # type: ignore
@@ -278,7 +290,9 @@ async def test_websocket_accept_connection(
         )
 
 
-async def test_websocket_accept_connection_warns(websocket_scope: WebsocketScope) -> None:
+async def test_websocket_accept_connection_warns(
+    websocket_scope: WebsocketScope,
+) -> None:
     connection = ASGIWebsocketConnection(Quart(__name__), websocket_scope)
 
     async def mock_send(message: ASGISendEvent) -> None:
@@ -317,7 +331,9 @@ def test_http_asgi_scope_from_request() -> None:
         (False, False, True),
     ],
 )
-async def test__handle_exception(propagate_exceptions: bool, testing: bool, raises: bool) -> None:
+async def test__handle_exception(
+    propagate_exceptions: bool, testing: bool, raises: bool
+) -> None:
     app = Mock()
     app.config = {}
     app.config["PROPAGATE_EXCEPTIONS"] = propagate_exceptions

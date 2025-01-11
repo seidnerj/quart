@@ -1,26 +1,25 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import ABC
+from abc import abstractmethod
+from collections.abc import AsyncGenerator
+from collections.abc import AsyncIterable
+from collections.abc import AsyncIterator
+from collections.abc import Iterable
 from hashlib import md5
-from inspect import isasyncgen, isgenerator
 from io import BytesIO
 from os import PathLike
 from types import TracebackType
-from typing import (
-    Any,
-    AnyStr,
-    AsyncGenerator,
-    AsyncIterable,
-    AsyncIterator,
-    Iterable,
-    overload,
-    TYPE_CHECKING,
-)
+from typing import Any
+from typing import Literal
+from typing import overload
+from typing import TYPE_CHECKING
 
 from aiofiles import open as async_open
 from aiofiles.base import AiofilesContextManager
-from aiofiles.threadpool.binary import AsyncBufferedIOBase, AsyncBufferedReader
-from werkzeug.datastructures import ContentRange, Headers
+from aiofiles.threadpool.binary import AsyncBufferedIOBase
+from werkzeug.datastructures import ContentRange
+from werkzeug.datastructures import Headers
 from werkzeug.exceptions import RequestedRangeNotSatisfiable
 from werkzeug.http import parse_etags
 from werkzeug.sansio.http import is_resource_modified
@@ -28,15 +27,11 @@ from werkzeug.sansio.response import Response as SansIOResponse
 
 from .. import json
 from ..globals import current_app
-from ..utils import file_path_to_path, run_sync_iterable
+from ..utils import file_path_to_path
+from ..utils import run_sync_iterable
 
 if TYPE_CHECKING:
     from .request import Request
-
-try:
-    from typing import Literal
-except ImportError:
-    from typing_extensions import Literal  # type: ignore
 
 
 class ResponseBody(ABC):
@@ -56,7 +51,9 @@ class ResponseBody(ABC):
         pass
 
     @abstractmethod
-    async def __aexit__(self, exc_type: type, exc_value: BaseException, tb: TracebackType) -> None:
+    async def __aexit__(
+        self, exc_type: type, exc_value: BaseException, tb: TracebackType
+    ) -> None:
         pass
 
 
@@ -74,14 +71,13 @@ class DataBody(ResponseBody):
     async def __aenter__(self) -> DataBody:
         return self
 
-    async def __aexit__(self, exc_type: type, exc_value: BaseException, tb: TracebackType) -> None:
+    async def __aexit__(
+        self, exc_type: type, exc_value: BaseException, tb: TracebackType
+    ) -> None:
         pass
 
-    def __aiter__(self) -> AsyncIterator:
-        async def _aiter() -> AsyncGenerator[bytes, None]:
-            yield self.data[self.begin : self.end]
-
-        return _aiter()
+    def __aiter__(self) -> AsyncIterator[bytes]:
+        return _DataBodyGen(self)
 
     async def make_conditional(self, begin: int, end: int | None) -> int:
         self.begin = begin
@@ -91,28 +87,37 @@ class DataBody(ResponseBody):
         return len(self.data)
 
 
+class _DataBodyGen(AsyncIterator[bytes]):
+    def __init__(self, data_body: DataBody):
+        self._data_body = data_body
+        self._iterated = False
+
+    async def __anext__(self) -> bytes:
+        if self._iterated:
+            raise StopAsyncIteration
+
+        self._iterated = True
+        return self._data_body.data[self._data_body.begin : self._data_body.end]
+
+
 class IterableBody(ResponseBody):
-    def __init__(self, iterable: AsyncGenerator[bytes, None] | Iterable) -> None:
-        self.iter: AsyncGenerator[bytes, None]
-        if isasyncgen(iterable):
-            self.iter = iterable
-        elif isgenerator(iterable):
-            self.iter = run_sync_iterable(iterable)
+    def __init__(self, iterable: AsyncIterable[Any] | Iterable[Any]) -> None:
+        self.iter: AsyncIterator[Any]
+        if isinstance(iterable, Iterable):
+            self.iter = run_sync_iterable(iter(iterable))
         else:
-
-            async def _aiter() -> AsyncGenerator[bytes, None]:
-                for data in iterable:  # type: ignore
-                    yield data
-
-            self.iter = _aiter()
+            self.iter = iterable.__aiter__()  # Can't use aiter() until 3.10
 
     async def __aenter__(self) -> IterableBody:
         return self
 
-    async def __aexit__(self, exc_type: type, exc_value: BaseException, tb: TracebackType) -> None:
-        await self.iter.aclose()
+    async def __aexit__(
+        self, exc_type: type, exc_value: BaseException, tb: TracebackType
+    ) -> None:
+        if hasattr(self.iter, "aclose"):
+            await self.iter.aclose()
 
-    def __aiter__(self) -> AsyncIterator:
+    def __aiter__(self) -> AsyncIterator[Any]:
         return self.iter
 
 
@@ -130,7 +135,9 @@ class FileBody(ResponseBody):
 
     buffer_size = 8192
 
-    def __init__(self, file_path: str | PathLike, *, buffer_size: int | None = None) -> None:
+    def __init__(
+        self, file_path: str | PathLike, *, buffer_size: int | None = None
+    ) -> None:
         self.file_path = file_path_to_path(file_path)
         self.size = self.file_path.stat().st_size
         self.begin = 0
@@ -138,7 +145,7 @@ class FileBody(ResponseBody):
         if buffer_size is not None:
             self.buffer_size = buffer_size
         self.file: AsyncBufferedIOBase | None = None
-        self.file_manager: AiofilesContextManager[None, None, AsyncBufferedReader] = None
+        self.file_manager: AiofilesContextManager = None
 
     async def __aenter__(self) -> FileBody:
         self.file_manager = async_open(self.file_path, mode="rb")
@@ -146,7 +153,9 @@ class FileBody(ResponseBody):
         await self.file.seek(self.begin)
         return self
 
-    async def __aexit__(self, exc_type: type, exc_value: BaseException, tb: TracebackType) -> None:
+    async def __aexit__(
+        self, exc_type: type, exc_value: BaseException, tb: TracebackType
+    ) -> None:
         await self.file_manager.__aexit__(exc_type, exc_value, tb)
 
     def __aiter__(self) -> FileBody:
@@ -198,7 +207,9 @@ class IOBody(ResponseBody):
         self.io_stream.seek(self.begin)
         return self
 
-    async def __aexit__(self, exc_type: type, exc_value: BaseException, tb: TracebackType) -> None:
+    async def __aexit__(
+        self, exc_type: type, exc_value: BaseException, tb: TracebackType
+    ) -> None:
         return None
 
     def __aiter__(self) -> IOBody:
@@ -252,7 +263,7 @@ class Response(SansIOResponse):
 
     def __init__(
         self,
-        response: ResponseBody | AnyStr | Iterable | None = None,
+        response: ResponseBody | str | bytes | Iterable | AsyncIterable | None = None,
         status: int | None = None,
         headers: dict | Headers | None = None,
         mimetype: str | None = None,
@@ -286,7 +297,7 @@ class Response(SansIOResponse):
         elif isinstance(response, ResponseBody):
             self.response = response
         elif isinstance(response, (str, bytes)):
-            self.set_data(response)  # type: ignore
+            self.set_data(response)
         else:
             self.response = self.iterable_body_class(response)
 
@@ -304,9 +315,9 @@ class Response(SansIOResponse):
     async def get_data(self, as_text: Literal[False]) -> bytes: ...
 
     @overload
-    async def get_data(self, as_text: bool = True) -> AnyStr: ...
+    async def get_data(self, as_text: bool = True) -> str | bytes: ...
 
-    async def get_data(self, as_text: bool = False) -> AnyStr:
+    async def get_data(self, as_text: bool = False) -> str | bytes:
         """Return the body data."""
         if self.implicit_sequence_conversion:
             await self.make_sequence()
@@ -317,9 +328,9 @@ class Response(SansIOResponse):
                     result += data.decode()
                 else:
                     result += data
-        return result  # type: ignore
+        return result
 
-    def set_data(self, data: AnyStr) -> None:
+    def set_data(self, data: str | bytes) -> None:
         """Set the response data.
 
         This will encode using the :attr:`charset`.
@@ -334,7 +345,7 @@ class Response(SansIOResponse):
 
     @property
     async def data(self) -> bytes:
-        return await self.get_data()
+        return await self.get_data(as_text=False)
 
     @data.setter
     def data(self, value: bytes) -> None:
@@ -414,7 +425,7 @@ class Response(SansIOResponse):
         self.content_range = ContentRange(
             request_range.units,
             self.response.begin,  # type: ignore
-            self.response.end - 1,  # type: ignore
+            self.response.end,  # type: ignore
             complete_length,
         )
         self.status_code = 206
@@ -429,7 +440,9 @@ class Response(SansIOResponse):
     ) -> Response:
         if request.method in {"GET", "HEAD"}:
             accept_ranges = _clean_accept_ranges(accept_ranges)
-            is206 = await self._process_range_request(request, complete_length, accept_ranges)
+            is206 = await self._process_range_request(
+                request, complete_length, accept_ranges
+            )
             if not is206 and not is_resource_modified(
                 http_range=request.headers.get("Range"),
                 http_if_range=request.headers.get("If-Range"),

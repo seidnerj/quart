@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import pytest
-from hypercorn.typing import HTTPScope, WebsocketScope
+from hypercorn.typing import HTTPScope
+from hypercorn.typing import WebsocketScope
 
 
 @pytest.fixture(name="http_scope")
@@ -23,6 +24,7 @@ def _http_scope() -> HTTPScope:
         ],
         "client": ("127.0.0.1", 80),
         "server": None,
+        "state": {},  # type: ignore[typeddict-item]
         "extensions": {},
     }
 
@@ -46,5 +48,6 @@ def _websocket_scope() -> WebsocketScope:
         "client": ("127.0.0.1", 80),
         "server": None,
         "subprotocols": [],
+        "state": {},  # type: ignore[typeddict-item]
         "extensions": {},
     }
