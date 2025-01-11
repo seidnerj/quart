@@ -70,7 +70,7 @@ These are the essential test commands you can run while developing:
 
 These are some more specific commands if you need them:
 
-* `tox parallel` - Run all test environments that will be run in CI, in
+* `tox --parallel` - Run all test environments that will be run in CI, in
   parallel. Python versions that are not installed are skipped.
 * `pre-commit` - Run the linter and formatter tools. Only runs against changed
   files that have been staged with `git add -u`. This will run automatically
